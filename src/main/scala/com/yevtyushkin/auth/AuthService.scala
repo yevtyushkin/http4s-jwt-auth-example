@@ -1,7 +1,7 @@
 package com.yevtyushkin.auth
 
+import cats.effect.Ref
 import cats.effect.kernel.Sync
-import cats.effect.{Concurrent, Ref}
 import cats.syntax.all.*
 import com.yevtyushkin.Config.SecretConfigValue
 import pdi.jwt.{Jwt, JwtAlgorithm, JwtClaim}
@@ -31,24 +31,27 @@ object AuthService {
 
           now <- Sync[F].realTimeInstant
 
-          authToken <- Sync[F].delay {
-            val issuedAtSeconds = now.getEpochSecond
+          result <-
+            if (userAlreadyExists) AuthError.UserAlreadyExists.asLeft.pure[F]
+            else
+              Sync[F].delay {
+                val issuedAtSeconds = now.getEpochSecond
 
-            val claim = JwtClaim(
-              subject = username.some,
-              issuedAt = issuedAtSeconds.some,
-              expiration = (issuedAtSeconds + jwtExpirationTime.toSeconds).some
-            )
+                val claim = JwtClaim(
+                  subject = username.some,
+                  issuedAt = issuedAtSeconds.some,
+                  expiration = (issuedAtSeconds + jwtExpirationTime.toSeconds).some
+                )
 
-            Jwt.encode(
-              claim = claim,
-              algorithm = JwtAlgorithm.HS512,
-              key = jwtSecret.value
-            )
-          }
+                Jwt
+                  .encode(
+                    claim = claim,
+                    algorithm = JwtAlgorithm.HS512,
+                    key = jwtSecret.value
+                  )
+                  .asRight
+              }
 
-        } yield
-          if (userAlreadyExists) AuthError.UserAlreadyExists.asLeft
-          else authToken.asRight
+        } yield result
     }
 }
